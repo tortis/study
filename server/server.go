@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -22,6 +21,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to open the decks gob .")
 	}
+
+	// Add a test deck
+	dm.AddDeck(study.NewDeck("Test Deck"))
 
 	// Attach handlers
 	router.Get("/decks", listDecks)
@@ -49,7 +51,7 @@ func listDecks(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 func postDeck(w http.ResponseWriter, r *http.Request) {
-	var d Deck
+	var d study.Deck
 	dec := json.NewDecoder(r.Body)
 	err := dec.Decode(&d)
 	if err != nil {

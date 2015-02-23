@@ -2,71 +2,58 @@ package study
 
 import (
 	"encoding/json"
-	"io"
-	"os"
+
+	"github.com/peterbourgon/diskv"
 )
 
 type DeckManager struct {
-	deckFile string
-	decks    map[string]*Deck
+	d *diskv.Diskv
 }
 
-func Open(deckFile string) (*DeckManager, error) {
+func Open(dataPath string) (*DeckManager, error) {
 	dm := &DeckManager{
-		deckFile: deckFile,
-		decks:    make(map[string]*Deck),
-	}
-	f, err := os.OpenFile(deckFile, os.O_CREATE, 0666)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	for err == nil {
-		var d Deck
-		err = dec.Decode(&d)
-		if err == nil {
-			dm.decks[d.Name] = &d
-		}
-	}
-	if err != io.EOF {
-		return nil, err
+		d: diskv.New(diskv.Options{
+			BasePath:     dataPath,
+			Transform:    func(s string) []string { return []string{} },
+			CacheSizeMax: 1024 * 1024,
+		}),
 	}
 	return dm, nil
 }
 
-func (dm *DeckManager) AddDeck(d *Deck) {
-	dm.decks[d.Name] = d
-}
-
-func (dm *DeckManager) RemoveDeck(d *Deck) {
-	delete(dm.decks, d.Name)
-}
-
-func (dm *DeckManager) GetDeck(name string) *Deck {
-	return dm.decks[name]
-}
-
-func (dm *DeckManager) ListDecks() []string {
-	l := make([]string, len(dm.decks))
-	for name, _ := range dm.decks {
-		l = append(l, name)
-	}
-	return l
-}
-
-func (dm *DeckManager) Save() error {
-	f, err := os.Create(dm.deckFile)
+func (dm *DeckManager) AddDeck(d *Deck) error {
+	b, err := json.Marshal(d)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	for _, deck := range dm.decks {
-		err = enc.Encode(deck)
-		if err != nil {
-			return err
-		}
+	err = dm.d.Write(d.Name, b)
+	if err != nil {
+		return err
 	}
 	return nil
+}
+
+func (dm *DeckManager) RemoveDeck(d *Deck) {
+}
+
+func (dm *DeckManager) GetDeck(name string) (*Deck, error) {
+	b, err := dm.d.Read(name)
+	if err != nil {
+		return nil, err
+	}
+	var d Deck
+	err = json.Unmarshal(b, &d)
+	if err != nil {
+		return nil, err
+	}
+	return &d, err
+}
+
+func (dm *DeckManager) ListDecks() []string {
+	l := make([]string, 0)
+	k := dm.d.Keys(nil)
+	for name := range k {
+		l = append(l, name)
+	}
+	return l
 }
