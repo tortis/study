@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/gorilla/pat"
-	"github.com/tortis/study"
 	"log"
 	"net/http"
+
+	"github.com/gorilla/pat"
+	"github.com/tortis/study"
 )
 
 var dm *study.DeckManager
@@ -18,7 +20,7 @@ func main() {
 	var err error
 	dm, err = study.Open("decks.gob")
 	if err != nil {
-		log.Fatal("Failed to open the decks gob file.")
+		log.Fatal("Failed to open the decks gob .")
 	}
 
 	// Attach handlers
@@ -36,9 +38,25 @@ func main() {
 
 func listDecks(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "%v", dm.ListDecks())
+	resp := struct {
+		Decks []string
+	}{Decks: dm.ListDecks()}
+	j, err := json.Marshal(&resp)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	w.Write(j)
 }
 func postDeck(w http.ResponseWriter, r *http.Request) {
+	var d Deck
+	dec := json.NewDecoder(r.Body)
+	err := dec.Decode(&d)
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	dm.AddDeck(&d)
 	w.WriteHeader(http.StatusOK)
 }
 func getDeck(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +72,5 @@ func deleteCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 func putCard(w http.ResponseWriter, r *http.Request) {
-
 	w.WriteHeader(http.StatusOK)
 }

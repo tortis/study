@@ -1,7 +1,7 @@
 package study
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"io"
 	"os"
 )
@@ -21,7 +21,7 @@ func Open(deckFile string) (*DeckManager, error) {
 		return nil, err
 	}
 	defer f.Close()
-	dec := gob.NewDecoder(f)
+	dec := json.NewDecoder(f)
 	for err == nil {
 		var d Deck
 		err = dec.Decode(&d)
@@ -37,6 +37,10 @@ func Open(deckFile string) (*DeckManager, error) {
 
 func (dm *DeckManager) AddDeck(d *Deck) {
 	dm.decks[d.Name] = d
+}
+
+func (dm *DeckManager) RemoveDeck(d *Deck) {
+	delete(dm.decks, d.Name)
 }
 
 func (dm *DeckManager) GetDeck(name string) *Deck {
@@ -57,7 +61,7 @@ func (dm *DeckManager) Save() error {
 		return err
 	}
 	defer f.Close()
-	enc := gob.NewEncoder(f)
+	enc := json.NewEncoder(f)
 	for _, deck := range dm.decks {
 		err = enc.Encode(deck)
 		if err != nil {
