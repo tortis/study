@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/mux"
@@ -47,7 +48,7 @@ func main() {
 	router.HandleFunc("/decks/{did}/cards/{cn}", putCard).Methods("DELETE")
 
 	log.Printf("Starting server on port 8080.")
-	log.Fatal(http.ListenAndServe(":8080", router))
+	log.Fatal(http.ListenAndServe(":8888", router))
 }
 
 func saveDecks() error {
@@ -152,16 +153,68 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 func deleteCard(w http.ResponseWriter, r *http.Request) {
-	deckName, _ := url.QueryUnescaped(mux.Vars(r)["did"])
-	_, e := decks[deckName]
+	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
+	d, e := decks[deckName]
 	if !e {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
 	cardNum, _ := strconv.Atoi(mux.Vars(r)["cn"])
-	decks[deckName].Cards = decks[deckName].Cards[
+
+	if cardNum >= len(d.Cards) || cardNum < 0 {
+		http.Error(w, "Invalid card number", http.StatusBadRequest)
+		return
+	}
+
+	// delete the card
+	copy(d.Cards[cardNum:], d.Cards[cardNum+1:])
+	d.Cards[len(d.Cards)-1] = nil
+	d.Cards = d.Cards[:len(d.Cards)-1]
+
+	// Save state
+	err := saveDecks()
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 func putCard(w http.ResponseWriter, r *http.Request) {
+	// Get the deck from url
+	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
+	d, e := decks[deckName]
+	if !e {
+		http.Error(w, "", http.StatusNotFound)
+		return
+	}
+	// Get the card number from url
+	cardNum, _ := strconv.Atoi(mux.Vars(r)["cn"])
+	if cardNum >= len(d.Cards) || cardNum < 0 {
+		http.Error(w, "Invalid card number", http.StatusBadRequest)
+		return
+	}
+
+	// Read the new card from json body
+	dec := json.NewDecoder(r.Body)
+	c := study.Card{}
+	err := dec.Decode(&c)
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	// Validate the card
+	if c.Title == "" {
+		http.Error(w, "The card must have a title.", http.StatusBadRequest)
+		return
+	}
+
+	d.Cards[cardNum] = &c
+	// Save state
+	err = saveDecks()
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
