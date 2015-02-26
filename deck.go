@@ -6,8 +6,8 @@ type Deck struct {
 	Cards  []*Card  `json:"cards"`
 }
 
-func NewDeck(name string) *Deck {
-	return &Deck{Name: name}
+func NewDeck(name string, fields []string) *Deck {
+	return &Deck{Name: name, Fields: fields}
 }
 
 func (d *Deck) AddField(name string) {
