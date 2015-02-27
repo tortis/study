@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/tortis/study"
@@ -46,6 +49,7 @@ func main() {
 	router.HandleFunc("/decks/{did}/cards", postCard).Methods("POST")
 	router.HandleFunc("/decks/{did}/cards/{cn}", deleteCard).Methods("DELETE")
 	router.HandleFunc("/decks/{did}/cards/{cn}", putCard).Methods("DELETE")
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 
 	log.Printf("Starting server on port 8080.")
 	log.Fatal(http.ListenAndServe(":8888", router))
@@ -117,31 +121,66 @@ func getDeck(w http.ResponseWriter, r *http.Request) {
 }
 func deleteDeck(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Deleting deck: %s\n", mux.Vars(r)["did"])
-	http.Error(w, "", http.StatusNotImplemented)
-}
-func postCard(w http.ResponseWriter, r *http.Request) {
-	log.Println("postCard handler called")
-	// Ensure the deck exists.
 	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
 	_, e := decks[deckName]
 	if !e {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
-	dec := json.NewDecoder(r.Body)
-	c := study.Card{}
-	err := dec.Decode(&c)
+	delete(decks, deckName)
+	err := saveDecks()
 	if err != nil {
-		http.Error(w, "", http.StatusBadRequest)
+		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-	// Validate the card
+	w.WriteHeader(http.StatusOK)
+}
+
+func postCard(w http.ResponseWriter, r *http.Request) {
+	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
+	d, e := decks[deckName]
+	if !e {
+		http.Error(w, "", http.StatusNotFound)
+		return
+	}
+	c := study.Card{
+		Title:  r.FormValue("title"),
+		Notes:  r.FormValue("notes"),
+		Fields: make(map[string]string),
+	}
+	for i := range d.Fields {
+		c.Fields[d.Fields[i]] = r.FormValue(d.Fields[i])
+	}
+	// Ensure a title was speicified.
 	if c.Title == "" {
 		http.Error(w, "The card must have a title.", http.StatusBadRequest)
 		return
 	}
-	// Add the card to the deck
-	decks[deckName].Cards = append(decks[deckName].Cards, &c)
+
+	// Read the file.
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "There was a problem uploading the image.", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	fname := fmt.Sprintf("%d-%s", time.Now().Unix(), header.Filename)
+	c.Image = fname
+	out, err := os.OpenFile("static/images/"+fname, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		log.Println("Failed to open image file", err)
+		return
+	}
+	_, err = io.Copy(out, file)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		log.Println("Failed to copy file from http form.")
+		return
+	}
+
+	d.Cards = append(d.Cards, &c)
 
 	// Save state
 	err = saveDecks()
@@ -149,9 +188,9 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-
 	w.WriteHeader(http.StatusOK)
 }
+
 func deleteCard(w http.ResponseWriter, r *http.Request) {
 	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
 	d, e := decks[deckName]
