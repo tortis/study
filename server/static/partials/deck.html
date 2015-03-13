@@ -1,0 +1,50 @@
+<div class="container">
+	<div class="panel panel-default item-panel" ng-repeat="item in deck.cards" ng-hide="item.ok">
+        <div class="panel-heading">
+            <span ng-click="deleteCard($index)" class="pull-right glyphicon glyphicon-trash action"></span>
+            <span class="pull-right glyphicon glyphicon-edit action"></span>
+            <h3 class="panel-title">{{ item.show ? item.title : "Card " + ($index + 1)}}</h3>
+        </div>
+		<div class="panel-body row">
+			<div class="col-xs-6">
+				<img class="item-img" src="/images/{{item.image}}" ng-click="item.show = !item.show">
+			</div>
+			<div class="col-xs-6" ng-show="item.show">
+                <dl class="dl-horizontal">
+                    <dt ng-repeat-start="f in deck.fields">{{f}}<dt>
+                    <dd ng-repeat-end>{{item.fields[f]}}</dd>
+					<dt>Notes</dt>
+					<dd>{{item.notes}}</dd>
+				</dl>
+			</div>
+		</div>
+    </div>
+    <div class="panel panel-default item-panel">
+        <div class="panel-heading">
+            <h3 class="panel-title">New Card</h3>
+        </div>
+        <div class="panel-body">
+            <form enctype="multipart/form-data" id="cardform" method="post" action="{{'/decks/'+did+'/cards'}}">
+                <div class="form-group">
+                     <label for="inputTitle">Title</label>
+                     <input type="text" name="title" class="form-control" id="titleInput" placeholder="Enter title">
+                </div>
+                <div class="row">
+                    <div ng-repeat="f in deck.fields" class="form-group col-md-4">
+                        <label>{{f}}</label>
+                        <input type="text" name="{{f}}" class="form-control" placeholder="{{'Enter ' + f}}">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea class="form-control" rows="3"  name="notes"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Image file</label>
+                    <input type="file" name="image" size="50">
+                </div>
+                <input type="submit" value="Submit" class="btn btn-success">
+            </form>
+        </div> <!-- panel-body -->
+    </div><!-- panel -->
+</div>

@@ -67,6 +67,7 @@ func saveDecks() error {
 	if err != nil {
 		return err
 	}
+	lock.Unlock()
 	return nil
 }
 
@@ -137,6 +138,7 @@ func deleteDeck(w http.ResponseWriter, r *http.Request) {
 }
 
 func postCard(w http.ResponseWriter, r *http.Request) {
+	log.Println("Content-Type: ", r.Header.Get("Content-Type"))
 	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
 	d, e := decks[deckName]
 	if !e {
@@ -160,6 +162,7 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 	// Read the file.
 	file, header, err := r.FormFile("image")
 	if err != nil {
+		log.Println("Could not open form file: ", err)
 		http.Error(w, "There was a problem uploading the image.", http.StatusBadRequest)
 		return
 	}
