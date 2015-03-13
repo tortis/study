@@ -48,7 +48,7 @@ func main() {
 	router.HandleFunc("/decks/{did}", deleteDeck).Methods("DELETE")
 	router.HandleFunc("/decks/{did}/cards", postCard).Methods("POST")
 	router.HandleFunc("/decks/{did}/cards/{cn}", deleteCard).Methods("DELETE")
-	router.HandleFunc("/decks/{did}/cards/{cn}", putCard).Methods("DELETE")
+	router.HandleFunc("/decks/{did}/cards/{cn}", putCard).Methods("PUT")
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 
 	log.Printf("Starting server on port 8080.")
@@ -145,14 +145,14 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
-	c := study.Card{
-		Title:  r.FormValue("title"),
-		Notes:  r.FormValue("notes"),
-		Fields: make(map[string]string),
+
+	c := study.Card{}
+	err := json.Unmarshal([]byte(r.FormValue("json")), &c)
+	if err != nil {
+		http.Error(w, "Failed to parse json.", http.StatusBadRequest)
+		return
 	}
-	for i := range d.Fields {
-		c.Fields[d.Fields[i]] = r.FormValue(d.Fields[i])
-	}
+
 	// Ensure a title was speicified.
 	if c.Title == "" {
 		http.Error(w, "The card must have a title.", http.StatusBadRequest)
@@ -224,6 +224,7 @@ func deleteCard(w http.ResponseWriter, r *http.Request) {
 }
 func putCard(w http.ResponseWriter, r *http.Request) {
 	// Get the deck from url
+	log.Println("Handing card update request.")
 	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
 	d, e := decks[deckName]
 	if !e {
