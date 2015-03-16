@@ -6,39 +6,29 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
-var decks map[string]*Deck
-var lock sync.Mutex
+const PORT = ":8888"
 
-// Load decks from json if possible
-func init() {
-	lock = sync.Mutex{}
-	f, err := os.Open("decks.json")
-	if err != nil {
-		log.Println("No deck.json file found. Starting fresh")
-		decks = make(map[string]*Deck)
-		return
-	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	err = dec.Decode(&decks)
-	if err != nil {
-		log.Println("Failed to read deck.json file. Starting fresh")
-		decks = make(map[string]*Deck)
-	}
-}
+var decks *mgo.Collection
 
 func main() {
 	// Create a gorilla router
 	router := mux.NewRouter()
+
+	// Open connection to database
+	dbs, err := mgo.Dial("localhost")
+	if err != nil {
+		log.Fatal(err)
+	}
+	studyDB := dbs.DB("study")
+	decks = studyDB.C("decks")
 
 	// Attach handlers
 	router.HandleFunc("/decks", listDecks).Methods("GET")
@@ -46,37 +36,28 @@ func main() {
 	router.HandleFunc("/decks/{did}", getDeck).Methods("GET")
 	router.HandleFunc("/decks/{did}", deleteDeck).Methods("DELETE")
 	router.HandleFunc("/decks/{did}/cards", postCard).Methods("POST")
-	router.HandleFunc("/decks/{did}/cards/{cn}", deleteCard).Methods("DELETE")
-	router.HandleFunc("/decks/{did}/cards/{cn}", putCard).Methods("PUT")
+	router.HandleFunc("/decks/{did}/cards/{cid}", deleteCard).Methods("DELETE")
+	router.HandleFunc("/decks/{did}/cards/{cid}", putCard).Methods("PUT")
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 
-	log.Printf("Starting server on port 8080.")
-	log.Fatal(http.ListenAndServe(":8888", router))
-}
-
-func saveDecks() error {
-	lock.Lock()
-	f, err := os.Create("decks.json")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	enc := json.NewEncoder(f)
-	err = enc.Encode(&decks)
-	if err != nil {
-		return err
-	}
-	lock.Unlock()
-	return nil
+	log.Printf("Starting server on port %s\n.", PORT)
+	log.Fatal(http.ListenAndServe(PORT, router))
 }
 
 func listDecks(w http.ResponseWriter, r *http.Request) {
+	// Response object that will be returned
 	resp := struct {
-		Decks []string
-	}{Decks: make([]string, 0)}
-	for n, _ := range decks {
-		resp.Decks = append(resp.Decks, n)
+		Decks []Deck
+	}{}
+
+	// Read decks from database, exclude the 'cards' field
+	err := decks.Find(bson.M{}).Select(bson.M{"cards": 0}).All(&resp.Decks)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
 	}
+
+	// Marshel response to json and return
 	j, err := json.Marshal(&resp)
 	if err != nil {
 		http.Error(w, "", http.StatusInternalServerError)
@@ -86,7 +67,6 @@ func listDecks(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 func postDeck(w http.ResponseWriter, r *http.Request) {
-	log.Println("postDeck handler called.")
 	// Try to read a Deck from request body
 	dec := json.NewDecoder(r.Body)
 	d := Deck{}
@@ -95,23 +75,42 @@ func postDeck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-	decks[d.Name] = &d
-	err = saveDecks()
+
+	// Validate the deck
+	if d.Name == "" {
+		http.Error(w, "No name given for deck", http.StatusBadRequest)
+		return
+	}
+
+	// Insert deck into the database
+	err = decks.Insert(&d)
 	if err != nil {
+		log.Println(err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 }
 func getDeck(w http.ResponseWriter, r *http.Request) {
-	urlName := mux.Vars(r)["did"]
-	name, _ := url.QueryUnescape(urlName)
-	log.Printf("Searching for %s\n", name)
-	d, e := decks[name]
-	if !e {
-		http.Error(w, "Deck not found", http.StatusNotFound)
+	deckId, err := parseObjectId(mux.Vars(r)["did"])
+	if err != nil {
+		http.Error(w, "", http.StatusNotFound)
 		return
 	}
+
+	// Get the deck from the database
+	d := Deck{}
+	err = decks.FindId(deckId).One(&d)
+	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.Error(w, "", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
 	b, err := json.Marshal(&d)
 	if err != nil {
 		http.Error(w, "", http.StatusInternalServerError)
@@ -120,33 +119,38 @@ func getDeck(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 func deleteDeck(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Deleting deck: %s\n", mux.Vars(r)["did"])
-	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
-	_, e := decks[deckName]
-	if !e {
+	// Get deck id from the url
+	deckId, err := parseObjectId(mux.Vars(r)["did"])
+	if err != nil {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
-	delete(decks, deckName)
-	err := saveDecks()
+
+	// Delete deck from database
+	err = decks.RemoveId(deckId)
 	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.Error(w, "", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
 func postCard(w http.ResponseWriter, r *http.Request) {
-	log.Println("Content-Type: ", r.Header.Get("Content-Type"))
-	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
-	d, e := decks[deckName]
-	if !e {
+	// Get deck id from the url
+	deckId, err := parseObjectId(mux.Vars(r)["did"])
+	if err != nil {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
 
+	// Read card from "json" part of body
 	c := Card{}
-	err := json.Unmarshal([]byte(r.FormValue("json")), &c)
+	err = json.Unmarshal([]byte(r.FormValue("json")), &c)
 	if err != nil {
 		http.Error(w, "Failed to parse json.", http.StatusBadRequest)
 		return
@@ -158,6 +162,8 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	c.Id = bson.NewObjectId()
+
 	// Read the file.
 	file, header, err := r.FormFile("image")
 	if err != nil {
@@ -167,8 +173,11 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Generate the file name
 	fname := fmt.Sprintf("%d-%s", time.Now().Unix(), header.Filename)
 	c.Image = fname
+
+	// Write the file to disk
 	out, err := os.OpenFile("static/images/"+fname, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		http.Error(w, "", http.StatusInternalServerError)
@@ -182,39 +191,47 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d.Cards = append(d.Cards, &c)
-
-	// Save state
-	err = saveDecks()
+	// Add the new card to the deck
+	q := bson.M{
+		"$push": bson.M{"cards": &c},
+	}
+	err = decks.UpdateId(deckId, q)
 	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.Error(w, "", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
 func deleteCard(w http.ResponseWriter, r *http.Request) {
-	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
-	d, e := decks[deckName]
-	if !e {
+	// Get deck id from the url
+	deckId, err := parseObjectId(mux.Vars(r)["did"])
+	if err != nil {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
-	cardNum, _ := strconv.Atoi(mux.Vars(r)["cn"])
 
-	if cardNum >= len(d.Cards) || cardNum < 0 {
-		http.Error(w, "Invalid card number", http.StatusBadRequest)
+	// Get the card number to delete
+	cardId, err := parseObjectId(mux.Vars(r)["cid"])
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 
-	// delete the card
-	copy(d.Cards[cardNum:], d.Cards[cardNum+1:])
-	d.Cards[len(d.Cards)-1] = nil
-	d.Cards = d.Cards[:len(d.Cards)-1]
-
-	// Save state
-	err := saveDecks()
+	q := bson.M{
+		"$pull": bson.M{"cards": bson.M{"id": cardId}},
+	}
+	err = decks.UpdateId(deckId, q)
 	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.Error(w, "", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
@@ -222,25 +239,24 @@ func deleteCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 func putCard(w http.ResponseWriter, r *http.Request) {
-	// Get the deck from url
-	log.Println("Handing card update request.")
-	deckName, _ := url.QueryUnescape(mux.Vars(r)["did"])
-	d, e := decks[deckName]
-	if !e {
+	// Get deck id from the url
+	deckId, err := parseObjectId(mux.Vars(r)["did"])
+	if err != nil {
 		http.Error(w, "", http.StatusNotFound)
 		return
 	}
-	// Get the card number from url
-	cardNum, _ := strconv.Atoi(mux.Vars(r)["cn"])
-	if cardNum >= len(d.Cards) || cardNum < 0 {
-		http.Error(w, "Invalid card number", http.StatusBadRequest)
+
+	// Get the card number to delete
+	cardId, err := parseObjectId(mux.Vars(r)["cid"])
+	if err != nil {
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 
 	// Read the new card from json body
 	dec := json.NewDecoder(r.Body)
 	c := Card{}
-	err := dec.Decode(&c)
+	err = dec.Decode(&c)
 	if err != nil {
 		http.Error(w, "", http.StatusBadRequest)
 		return
@@ -251,12 +267,30 @@ func putCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d.Cards[cardNum] = &c
-	// Save state
-	err = saveDecks()
+	// Update the card in the database
+	q := bson.M{
+		"$set": bson.M{
+			"cards.$.title":  c.Title,
+			"cards.$.fields": c.Fields,
+			"cards.$.notes":  c.Notes,
+		},
+	}
+	err = decks.Update(bson.M{"_id": deckId, "cards.id": cardId}, q)
 	if err != nil {
+		if err == mgo.ErrNotFound {
+			http.Error(w, "", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
+}
+
+func parseObjectId(s string) (bson.ObjectId, error) {
+	if !bson.IsObjectIdHex(s) {
+		return bson.NewObjectId(), fmt.Errorf("Id: %s is not a bson id.", s)
+	}
+	return bson.ObjectIdHex(s), nil
 }

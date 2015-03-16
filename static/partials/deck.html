@@ -2,7 +2,7 @@
 	<h2 style="margin-bottom: 20px;">{{deck.name}}</h2>
 	<div class="panel panel-default item-panel" ng-repeat="item in deck.cards" ng-hide="item.ok">
         <div ng-hide="item.editing" class="panel-heading">
-            <span ng-click="deleteCard($index)" class="pull-right glyphicon glyphicon-trash action"></span>
+            <span ng-click="deleteCard(item, $index)" class="pull-right glyphicon glyphicon-trash action"></span>
             <span ng-click="item.editing = true" class="pull-right glyphicon glyphicon-edit action"></span>
             <h3 class="panel-title">{{ item.show ? item.title : "Card " + ($index + 1)}}</h3>
         </div>

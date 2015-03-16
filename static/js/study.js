@@ -4,8 +4,8 @@ StudyApp.config(['$routeProvider', '$locationProvider',
     function($routeProvider, $locationProvider) {
         $routeProvider.
         when('/', {
-            templateUrl: '/partials/decks.html',
-            controller: 'DecksCrtl'
+            templateUrl: '/partials/list.html',
+            controller: 'ListCtrl'
         }).
         when('/:did', {
             templateUrl: '/partials/deck.html',
@@ -30,6 +30,21 @@ StudyApp.directive('fileModel', ['$parse', function ($parse) {
 	};
 }]);
 
+StudyApp.controller('ListCtrl', ['$scope', '$http',
+    function($scope, $http) {
+       $scope.update = function() {
+            $http.get("/decks")
+            .success(function(data, status, headers, config) {
+                $scope.decks = data.Decks;
+            })
+            .error(function() {
+
+            });
+       }; 
+
+       $scope.update();
+    }]);
+
 StudyApp.controller('DeckCtrl', ['$scope', '$http', '$routeParams',
     function($scope, $http, $routeParams) {
         console.log("DeckCtrl started");
@@ -42,7 +57,7 @@ StudyApp.controller('DeckCtrl', ['$scope', '$http', '$routeParams',
         	success(function(data,status, headers, config) {
         	    $scope.deck = data;
                 for (var i = 0; i < $scope.deck.cards.length; i++) {
-                    $scope.deck.cards[i].notess = $scope.deck.cards[i].notes.split("\r\n");
+                    $scope.deck.cards[i].notess = $scope.deck.cards[i].notes.split("\n");
                 }
         	}).
         	error(function(data, status, headers, config) {
@@ -55,6 +70,7 @@ StudyApp.controller('DeckCtrl', ['$scope', '$http', '$routeParams',
 		$scope.postCard = function() {
 			var fd = new FormData();
 			fd.append('image', $scope.newimg);
+            $scope.newc.notes = $scope.newc.notes.replace("\r\n", "\n");
 			fd.append('json', JSON.stringify($scope.newc));
 			console.log("Posting card: " + JSON.stringify($scope.newc));
 			$http.post("/decks/"+$scope.did+"/cards", fd, {
@@ -72,8 +88,8 @@ StudyApp.controller('DeckCtrl', ['$scope', '$http', '$routeParams',
 			});
 		};
 
-        $scope.deleteCard = function(i) {
-            $http.delete("/decks/"+$scope.did+"/cards/"+i)
+        $scope.deleteCard = function(c, i) {
+            $http.delete("/decks/"+$scope.did+"/cards/"+c.id)
             .success(function(data, status, headers, config) {
                 console.log("Successfully deleted card");
                 $scope.deck.cards.splice(i, 1);
@@ -83,9 +99,12 @@ StudyApp.controller('DeckCtrl', ['$scope', '$http', '$routeParams',
             });
         };
 		$scope.updateCard = function(c, i) {
-			$http.put("/decks/"+$scope.did+"/cards/"+i, JSON.stringify(c))
+			$http.put("/decks/"+$scope.did+"/cards/"+c.id, JSON.stringify(c))
 			.success(function(data, status, headers, config) {
 				c.editing = false;
+                for (var i = 0; i < $scope.deck.cards.length; i++) {
+                    $scope.deck.cards[i].notess = $scope.deck.cards[i].notes.split("\n");
+                }
 				console.log("Card updated successfully.");
 			})
 			.error(function(data, status, headers, config) {

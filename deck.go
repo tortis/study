@@ -1,19 +1,14 @@
 package main
 
+import "gopkg.in/mgo.v2/bson"
+
 type Deck struct {
-	Name   string   `json:"name"`
-	Fields []string `json:"fields"`
-	Cards  []*Card  `json:"cards"`
+	Id     bson.ObjectId `json:"_id,omitempty" bson:"_id,omitempty"`
+	Name   string        `json:"name" bson:"name"`
+	Fields []string      `json:"fields" bson:"fields"`
+	Cards  []*Card       `json:"cards,omitempty" bson:"cards"`
 }
 
 func NewDeck(name string, fields []string) *Deck {
 	return &Deck{Name: name, Fields: fields}
-}
-
-func (d *Deck) AddField(name string) {
-	d.Fields = append(d.Fields, name)
-}
-
-func (d *Deck) AddCard(c *Card) {
-	d.Cards = append(d.Cards, c)
 }
