@@ -20,7 +20,7 @@
                     <dt ng-repeat-start="f in deck.fields">{{f}}<dt>
                     <dd ng-repeat-end>{{item.fields[f]}}</dd>
 					<dt>Notes</dt>
-					<dd>{{item.notes}}</dd>
+                    <dd><p ng-repeat="note in item.notess track by $index" >{{note}}</p></dd>
 				</dl>
 			</div>
 			<div class="col-xs-6" ng-show="item.editing">

@@ -13,10 +13,9 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/tortis/study"
 )
 
-var decks map[string]*study.Deck
+var decks map[string]*Deck
 var lock sync.Mutex
 
 // Load decks from json if possible
@@ -25,7 +24,7 @@ func init() {
 	f, err := os.Open("decks.json")
 	if err != nil {
 		log.Println("No deck.json file found. Starting fresh")
-		decks = make(map[string]*study.Deck)
+		decks = make(map[string]*Deck)
 		return
 	}
 	defer f.Close()
@@ -33,7 +32,7 @@ func init() {
 	err = dec.Decode(&decks)
 	if err != nil {
 		log.Println("Failed to read deck.json file. Starting fresh")
-		decks = make(map[string]*study.Deck)
+		decks = make(map[string]*Deck)
 	}
 }
 
@@ -90,7 +89,7 @@ func postDeck(w http.ResponseWriter, r *http.Request) {
 	log.Println("postDeck handler called.")
 	// Try to read a Deck from request body
 	dec := json.NewDecoder(r.Body)
-	d := study.Deck{}
+	d := Deck{}
 	err := dec.Decode(&d)
 	if err != nil {
 		http.Error(w, "", http.StatusBadRequest)
@@ -146,7 +145,7 @@ func postCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := study.Card{}
+	c := Card{}
 	err := json.Unmarshal([]byte(r.FormValue("json")), &c)
 	if err != nil {
 		http.Error(w, "Failed to parse json.", http.StatusBadRequest)
@@ -240,7 +239,7 @@ func putCard(w http.ResponseWriter, r *http.Request) {
 
 	// Read the new card from json body
 	dec := json.NewDecoder(r.Body)
-	c := study.Card{}
+	c := Card{}
 	err := dec.Decode(&c)
 	if err != nil {
 		http.Error(w, "", http.StatusBadRequest)

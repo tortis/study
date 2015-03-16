@@ -1,4 +1,4 @@
-package study
+package main
 
 type Card struct {
 	Title  string            `json:"title"`

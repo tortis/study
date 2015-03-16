@@ -41,7 +41,9 @@ StudyApp.controller('DeckCtrl', ['$scope', '$http', '$routeParams',
         	$http.get("/decks/"+$scope.did).
         	success(function(data,status, headers, config) {
         	    $scope.deck = data;
-        	    console.log(JSON.stringify(data));
+                for (var i = 0; i < $scope.deck.cards.length; i++) {
+                    $scope.deck.cards[i].notess = $scope.deck.cards[i].notes.split("\r\n");
+                }
         	}).
         	error(function(data, status, headers, config) {
         	    console.log("Error on call to /decks/test2");

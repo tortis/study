@@ -1,4 +1,4 @@
-package study
+package main
 
 type Deck struct {
 	Name   string   `json:"name"`
